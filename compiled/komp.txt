@@ -1,0 +1,1299 @@
+# Adrian Grzymski 268508
+from sly import Lexer as L, Parser as P
+from utils import *
+
+class Lexer(L):
+    tokens = {PROGRAM,PROCEDURE,IS,IN,END,IF,
+              THEN,ELSE,WHILE,ENDWHILE,ENDIF,DO,UNTIL,REPEAT,READ,WRITE,T,NUM,PIDENTIFIER,
+              ASSIGN,NEQ,LE,GE,EQ,LT,GT,PLUS,MINUS,MOD,TIMES,DIV,LP1,RP1,RP2,LP2,COMMA,SEMIC}
+
+    ignore = ' \t'
+
+    @_(r'#.*')
+    def ignore_comment(self, t):
+        self.lineno += t.value.count('\n')
+
+    @_(r'\n+')
+    def ignore_newline(self, t):
+        self.lineno += t.value.count('\n')    
+
+    PROGRAM = r'PROGRAM'
+    PROCEDURE = r'PROCEDURE'
+    IS = r'IS'
+    IN = r'IN'
+    ENDIF = r'ENDIF'  
+    WHILE = r'WHILE'
+    ENDWHILE = r'ENDWHILE'  
+    END = r'END'
+    IF = r'IF'
+    THEN = r'THEN'
+    ELSE = r'ELSE'
+    DO = r'DO'
+    UNTIL = r'UNTIL'
+    REPEAT = r'REPEAT'
+    READ = r'READ'
+    WRITE = r'WRITE'
+    T = r'T'
+    PIDENTIFIER = r'[_a-z]+'
+    ASSIGN = r':='
+    NEQ = r'!='
+    LE = r'<='
+    GE = r'>='
+    LT = r'<'
+    GT = r'>'
+    EQ = r'='
+    PLUS = r'\+'
+    MINUS = r'-'
+    TIMES = r'\*'
+    MOD = r'%'
+    DIV = r'/'
+    LP1 = r'\('
+    RP1 = r'\)'
+    LP2 = r'\['
+    RP2 = r'\]'
+    COMMA = r','
+    SEMIC = r';'
+
+    @_(r'\d+')
+    def NUM(self, t):
+        t.value = int(t.value)
+        return t
+    
+    def error(self, t):
+        print("Illegal character '%s'" % t.value[0])
+        self.index += 1
+
+class Parser(P):
+    tokens = Lexer.tokens 
+
+    def error(self, token):
+        # Customize the error message here
+        print(f"Syntax Error at line {token.lineno}")
+        sys.exit(1)
+
+    
+    @_('procedures main')
+    def program_all(self,p):
+        return (p.procedures,p.main)
+    
+
+    @_('procedures PROCEDURE proc_head IS declarations IN commands END')
+    def procedures(self,p):
+        p.procedures.append((p.proc_head,('declarations',p.declarations),('commands',p.commands),p.lineno))
+        return p.procedures
+    
+    @_('procedures PROCEDURE proc_head IS IN commands END')
+    def procedures(self,p):
+        p.procedures.append((p.proc_head,('commands',p.commands),p.lineno))
+        return p.procedures
+    
+    @_('')
+    def procedures(self, p):
+        return []
+
+
+    @_('PROGRAM IS declarations IN commands END')
+    def main(self,p):
+        return (('declarations',p.declarations),('commands',p.commands))
+    
+    @_('PROGRAM IS IN commands END')
+    def main(self,p):
+        return (('commands',p.commands))
+    
+
+    @_('commands command')
+    def commands(self,p):
+        p.commands.append(p.command)
+        return p.commands
+    
+    @_('command')
+    def commands(self,p):
+        return [p.command]
+    
+# SEKCJA KOMEND
+    @_('identifier ASSIGN expression SEMIC')
+    def command(self,p):
+        return ('ASSIGN',p.identifier,p.expression,p.lineno)
+    
+    @_('IF condition THEN commands ELSE commands ENDIF')
+    def command(self,p):
+        return ('IFELSE', p.condition,('if_commands',p.commands0),('else_commands',p.commands1),p.lineno)
+    
+    @_('IF condition THEN commands ENDIF')
+    def command(self,p):
+        return ('IF', p.condition,('commands',p.commands),p.lineno)
+
+    @_('WHILE condition DO commands ENDWHILE')
+    def command(self,p):
+        return ('WHILE',p.condition,('commands',p.commands),p.lineno)
+    
+    @_('REPEAT commands UNTIL condition SEMIC')
+    def command(self,p):
+        return ('REPEAT',p.condition,('commands',p.commands),p.lineno)
+    
+    @_('proc_call SEMIC')
+    def command(self,p):
+        return  p.proc_call
+    
+    @_('READ identifier SEMIC')
+    def command(self,p):
+        return ('READ',p.identifier,p.lineno)
+    
+    @_('WRITE value SEMIC')
+    def command(self,p):
+        return ('WRITE',p.value,p.lineno)
+    
+
+    @_('PIDENTIFIER LP1 args_decl RP1')
+    def proc_head(self,p):
+        return (p.PIDENTIFIER,p.args_decl)
+
+
+    @_('PIDENTIFIER LP1 args RP1')
+    def proc_call(self,p):
+        return ('proc_call',p.PIDENTIFIER,p.args,p.lineno)  
+    
+#DEKLAEACJE
+    @_( 'declarations COMMA PIDENTIFIER')
+    def declarations(self,p):
+        p.declarations.append(('var',p.PIDENTIFIER,p.lineno))
+        return p.declarations
+    
+    @_('declarations COMMA PIDENTIFIER LP2 NUM RP2')
+    def declarations(self,p):
+        p.declarations.append(('arr',p.PIDENTIFIER,p.NUM,p.lineno))
+        return  p.declarations
+    
+    @_('PIDENTIFIER')
+    def declarations(self,p):
+        return [('var',p.PIDENTIFIER,p.lineno)]
+    
+    @_('PIDENTIFIER LP2 NUM RP2')
+    def declarations(self,p):
+        return [('arr',p.PIDENTIFIER,p.NUM,p.lineno)]
+
+
+
+    @_('args_decl COMMA PIDENTIFIER')
+    def args_decl(self,p):
+        p.args_decl.append(('var',p.PIDENTIFIER))
+        return p.args_decl
+    
+    @_('args_decl COMMA T PIDENTIFIER')
+    def args_decl(self,p):
+        p.args_decl.append(('arr' ,p.PIDENTIFIER))
+        return p.args_decl
+    
+    @_('PIDENTIFIER')
+    def args_decl(self,p):
+        return [('var',p.PIDENTIFIER)]
+    
+    @_('T PIDENTIFIER')
+    def args_decl(self,p):
+        return [('arr',p.PIDENTIFIER)]
+    
+
+    @_('args COMMA PIDENTIFIER')
+    def args(self,p):
+        p.args.append(p.PIDENTIFIER)
+        return p.args
+    
+    @_('PIDENTIFIER')
+    def args(self,p):
+        return [p.PIDENTIFIER]
+    
+#WYRAZ ALGEBRAICZNE
+    @_('value')
+    def expression(self,p):
+        return ('val',p.value)
+    
+    @_('value PLUS value')
+    def expression(self,p):
+        return ('ADD',p.value0,p.value1)
+    
+    @_('value MINUS value')
+    def expression(self,p):
+        return ('SUB',p.value0,p.value1)
+    
+    @_('value TIMES value')
+    def expression(self,p):
+        return ('MUL',p.value0,p.value1)
+    
+    @_('value DIV value')
+    def expression(self,p):
+        return ('DIV',p.value0,p.value1)
+    
+    @_('value MOD value')
+    def expression(self,p):
+        return ('MOD',p.value0,p.value1)
+    
+#WARUNKI
+    @_('value EQ value')
+    def condition(self,p):
+        return ('EQ',p.value0,p.value1)
+    
+    @_('value NEQ value')
+    def condition(self,p):
+        return ('NEQ',p.value0,p.value1)
+    
+    @_('value LT value')
+    def condition(self,p):
+        return ('LT',p.value0,p.value1)
+    
+    @_('value GT value')
+    def condition(self,p):
+        return ('GT',p.value0,p.value1)
+
+    @_('value LE value')
+    def condition(self,p):
+        return ('LE',p.value0,p.value1)
+
+    @_('value GE value')
+    def condition(self,p):
+        return ('GE',p.value0,p.value1)
+    
+# VALUE
+    @_('NUM')
+    def value(self,p):
+        return ('number',p.NUM)
+    
+    @_('identifier')
+    def value(self,p):
+        return ('iden',p.identifier)
+    
+#IDENTYFIKATORY
+    @_('PIDENTIFIER')
+    def identifier(self,p):
+        return ('var',p.PIDENTIFIER)
+    
+    @_('PIDENTIFIER LP2 NUM RP2')
+    def identifier(self,p):
+        return ('arr2',p.PIDENTIFIER,p.NUM)
+    
+    @_('PIDENTIFIER LP2 PIDENTIFIER RP2')
+    def identifier(self,p):
+        return ('arr', p[0],p[2])
+    
+class Variable:
+    def __init__(self,name,type,scope,size = 1):
+        self.name = name
+        self.type = type
+        self.scope = scope
+        self.size = size
+        self.is_Assigned = False
+        self.is_in_register = False 
+        self.reg = None
+        self.mem = None
+    
+
+    def set_register(self,reg):
+        self.is_in_register = True
+        self.reg = reg
+    
+    def set_mem(self,mem):
+        self.mem = mem
+
+class Procedure:
+    def __init__(self,name):
+        self.name = name
+        self.call_num = 0
+        self.declarations = dict() # mapa zmiennych   - podaje nazwe zmiennej i dostaje zmienna
+        self.arg_map = dict()      # mapa argumentow  - podaje nazwe argumentu i dostaje argument
+        self.arg_list = []         # lista argumentow - podaje indeks i dostaje argument
+        self.proc_head = ""
+        self.commands = [] 
+
+    def set_arguments(self,var_list):
+        for i,var in enumerate(var_list):
+            self.arg_list[i].set_var(var)
+        # przydzielam kazdemu argumentowi odpowiednia zmienna przed wywolaniem procedury
+    
+    def inc_call_num(self):
+        self.call_num += 1    
+
+    def set_commands(self,commands):
+        self.commands = commands        
+
+class Argument:
+    def __init__(self,name,type,proc_name):
+        self.name = name
+        self.type = type
+        self.proc_name = proc_name
+        self.mem = None
+        self.is_assigning = False
+
+    def set_var(self,var):
+        self.var = var
+ 
+class Analyzer: 
+    def __init__(self, ast):
+        self.k = 0 
+        self.main_declarations = dict()  # mapa deklaracji
+        self.proc_declarations = dict()  # mapa procedur
+
+        self.fixed_registers = {"ra","rh"} # rejestry ktore sa zawsze zajete
+        self.free_registers = {"rb","rc","rd","re","rf","rg"} # rejestry ktore sa wolne
+        self.is_READ_or_WRITE = False # zmienna wychwutujaca pusty program
+        self.data = self.analyze(ast)
+
+
+    def analyze(self,ast):  # Funkcja analizujaca poprawnosc skladni i zbiera podstawowe informacje o programie
+        for procedure in ast[0]:
+            self.analyze_procedure(procedure)
+        self.analyze_main(ast[1])
+
+    def safe_delete(self,reg):
+        self.fixed_registers.add(reg)
+        if reg in self.free_registers:
+            self.free_registers.remove(reg)
+
+
+    def analyze_procedure(self, procedure):
+    
+        proc_head = procedure[0]
+        proc_name = proc_head[0]
+        line_number = procedure[-1] 
+        arguments = proc_head[1]
+
+        proc = Procedure(proc_name)
+        proc.proc_head = self.gen_fun_head(proc_head)
+        if proc_name in self.proc_declarations.keys():
+            error(f"{line_number}: Procedure name '{proc_name}' already used")
+        else:
+            self.proc_declarations[proc_name] = proc
+
+
+        # DODAWANIE ARGUMENTOW
+        for argument in arguments:
+            t = argument[0]
+            arr_name = argument[1]
+            if t == 'var':
+                arr = Argument(arr_name,'var',proc_name)
+                proc.arg_map[arr_name] = arr
+                proc.arg_list.append(arr)
+            else :
+                arr = Argument(arr_name,'arr',proc_name)
+                proc.arg_map[arr_name] = arr
+                proc.arg_list.append(arr)
+
+        # DODAWANIE DEKLARACJI
+        for node in procedure:
+            if type(node) is int:
+                continue
+
+            if node[0] == 'declarations':
+                for declaration in node[1]:
+                    var_name = declaration[1]
+                    line_number = declaration[-1]
+                    dec = proc.declarations
+                    
+                    if (var_name in dec.keys()) or (var_name in proc.arg_map.keys()): 
+                        error(f"{line_number}: name '{var_name}' already used")
+                    else:
+                        if declaration[0]  == 'var':
+                            var = Variable(var_name,'var',proc_name)
+                            dec[var_name] = var
+
+                        else: 
+                            size = declaration[2]
+                            var = Variable(var_name,'arr',proc_name,size=size)
+                            dec[var_name] = var
+        #ANALIZA KOMEND
+        for node in procedure:
+            if type(node) is int:
+                continue
+
+            if node[0] == 'commands':
+                for command in node[1]:
+                    self.analyze_command(command,proc.declarations,True,proc_name,proc.arg_map,proc.arg_list)                        
+
+
+    def analyze_main(self, main):
+        for node in main:
+            if node[0] == 'declarations':
+                for declaration in node[1]:
+                    line_number = declaration[-1]
+                    var_name = declaration[1]
+                    
+                    if var_name in self.main_declarations.keys():
+                        error(f"{line_number}: name '{var_name}' already used")
+                    if declaration[0] == 'arr':
+                        size = declaration[2]
+                        var = Variable(var_name,'arr','MAIN',size=size)
+                        self.main_declarations[var_name] = var
+                    else:
+                        var = Variable(var_name,'var','MAIN')
+                        self.main_declarations[var_name] = var
+
+        for node in main:
+            if node[0] == 'commands':
+                for command in node[1]:
+                    self.analyze_command(command,self.main_declarations)
+                    
+
+    def analyze_command(self,command,declarations,is_proc = False,proc_name = None, arg_map = None,arg_list = None):
+        
+        line_number = command[-1]
+
+        com_type = command[0]
+        if com_type == 'ASSIGN':
+            iden =  command[1]
+
+            
+            #SPRAWDZENIE CZY ZMIENNA JEST ZADEKLAROWANA , MUSZE TO ZROBIC WCZESNIEJ BO ? w analize iden_syntax wykorzystuje info o is_assigned
+            if iden[1] not in declarations.keys():
+                if is_proc and (iden[1] not in arg_map.keys()): # sprawdzanie czy jest argumentem 
+                    error(f"{line_number}: '{iden[1]}' not declared")
+                if not is_proc:
+                    error(f"{line_number}: '{iden[1]}' not declared")
+            
+            #SPRAWDZENIE CZY ZMIENNA JEST ZAINICJOWANA
+            if (iden[1] in declarations.keys()) and declarations[iden[1]].type == 'var':
+                declarations[iden[1]].is_Assigned = True
+
+    
+            #INICJOWANIE ARGUMENTU
+            if is_proc and (iden[1] in arg_map.keys()):
+                arg_map[iden[1]].is_assigning = True
+    
+
+            self.check_iden_syntax(line_number,iden,declarations,is_proc,arg_map)    
+            exp = command[2]
+ 
+            # PRZYPADEK GDY EXP JEST VALUE
+            if exp[0] == 'val':
+                val = exp[1]
+                self.check_val_syntax(line_number,val,declarations,is_proc,arg_map)
+                        
+            # PRZYPADEK GDY EXP JEST EXP :)
+            operator = exp[0]         
+            if operator == 'ADD' or operator == 'SUB' or operator == 'MUL' or operator == 'DIV' or operator == 'MOD':
+                
+                val1 = exp[1]
+                val2 = exp[2]
+
+                #SPRAWDZANIE SYNTAXU
+                self.check_val_syntax(line_number,val1,declarations,is_proc,arg_map)
+                self.check_val_syntax(line_number,val2,declarations,is_proc,arg_map)
+
+            
+            if operator == 'MUL' or operator == 'DIV' :
+                self.safe_delete("rg")
+                self.safe_delete("re")
+                # ... ?
+
+        if com_type in {'IF', 'IFELSE', 'WHILE', 'REPEAT'}:
+            
+            condition = command[1]
+            val1 = condition[1]
+            val2 = condition[2]
+
+            #REPEAT MA INNY SYNTAX , CONDITION JEST PO OPERACJACH   
+
+            if com_type != 'REPEAT':
+                self.check_val_syntax(line_number,val1,declarations,is_proc,arg_map)
+                self.check_val_syntax(line_number,val2,declarations,is_proc,arg_map)
+
+            
+            if condition[1] == 'EQ' or condition[1] == 'NEQ' :
+                self.safe_delete("rg")
+                self.safe_delete("re")
+                # ... ?
+                # to be
+
+
+            # ANALIZA REKURENCYJNA DLA KOMENDY
+            if com_type == 'IF':
+                if_commands = command[2][1]
+            
+                for com in if_commands:
+                    self.analyze_command(com,declarations,is_proc,proc_name,arg_map,arg_list) 
+            
+            if com_type == 'IFELSE':
+                if_commands = command[2][1]
+                else_commands = command[3][1]
+            
+                for com in if_commands:
+                    self.analyze_command(com,declarations,is_proc,proc_name,arg_map,arg_list)
+                
+                for com in else_commands:
+                    self.analyze_command(com,declarations,is_proc,proc_name,arg_map,arg_list)
+            
+            if com_type == 'WHILE':
+                while_commands = command[2][1]
+            
+                for com in while_commands:
+                    self.analyze_command(com,declarations,is_proc,proc_name,arg_map,arg_list)
+            
+            if com_type == 'REPEAT':
+                repeat_commands = command[2][1]
+            
+                for com in repeat_commands:
+                    self.analyze_command(com,declarations,is_proc,proc_name,arg_map,arg_list)
+
+                #REPEAT MA INNY SYNTAX , CONDITION JEST PO OPERACJACH
+                self.check_val_syntax(line_number,val1,declarations,is_proc,arg_map) # trzeba pomyslec czy to jest dobrze
+                self.check_val_syntax(line_number,val2,declarations,is_proc,arg_map)
+
+
+        if com_type  == 'READ':
+            iden = command[1]
+
+            #INICJALIZACJA ZMIENNEJ PO READ
+            if iden[0] == 'var':
+                if (iden[1] in declarations.keys()) and declarations[iden[1]].type == 'var':
+                    declarations[iden[1]].is_Assigned = True
+
+            self.check_iden_syntax(line_number,iden,declarations,is_proc,arg_map)
+            self.is_READ_or_WRITE = True
+
+        if com_type == 'WRITE':
+            val = command[1]
+            self.check_val_syntax(line_number,val,declarations,is_proc,arg_map)
+            self.is_READ_or_WRITE = True
+
+
+
+        if com_type == 'proc_call':
+            c_proc_name = command[1]
+            args = command[2]
+
+            # SPRAWDZENIE CZY PROCEDURA ZOSTALA ZADEKLAROWANA i CZY NIE JEST REKURENCYJNYM WYWOLANIEM
+            if c_proc_name not in self.proc_declarations.keys():
+                error(f"{line_number}: Procedure '{c_proc_name}' not declared")
+            if c_proc_name == proc_name and is_proc:
+                error(f"{line_number}: Recursive call in function '{proc_name}'")
+
+            # TO MOZNA ODPALIC TYLKO GDY PROCEDURA JEST ZADEKLAROWANA
+            called_proc_args = self.proc_declarations[c_proc_name].arg_list
+
+
+            if c_proc_name in self.proc_declarations.keys():
+                self.proc_declarations[c_proc_name].inc_call_num()
+
+     
+
+            # SPRAWDZENIE CZY LICZBA ARGUMETNOW SIE ZGADZA
+            if len(args) != len(called_proc_args):
+                error(f"{line_number}: Wrong number of arguments, expected {len(called_proc_args)}")
+
+           
+            for i,arg in enumerate(args): 
+                if called_proc_args[i].is_assigning == True:
+                    if arg in declarations.keys():
+                        declarations[arg].is_Assigned = True
+                    else: 
+                        arg_map[arg].is_assigning = True
+
+
+            # SPRAWDZENIE CZY ARGUMENTY SA ZADEKLAROWANE , to wydaje sie byc dobrze lepiej pomyslec
+            for arg in args:
+                if (arg not in declarations.keys()):
+                    if is_proc and arg not in arg_map.keys():
+                        error(f"{line_number}: '{arg}' not declared")
+                    if not is_proc:
+                        error(f"{line_number}: '{arg}' not declared")
+
+
+       # ROZJEVANA SYTUACJA CO JAK ARGUMENTY SA TYM SAMA ZMIENNO 
+            called_proc = self.proc_declarations[c_proc_name]
+            head = called_proc.proc_head
+            for i,arg in enumerate(args):
+                if arg in declarations.keys() and declarations[arg].type != self.proc_declarations[c_proc_name].arg_list[i].type:
+                    if declarations[arg].type == 'var':
+                         error(f"{line_number}: {arg} is not an array, {head}")  
+                    else:
+                        error(f"{line_number}: {arg} is not a variable {head}")
+                
+                if is_proc and arg in arg_map.keys():  # trzeba umiec rozronic argumenty wywolywanej procedury od argumentow procedury w ktorej jestesmy
+                    if arg_map[arg].type != self.proc_declarations[c_proc_name].arg_list[i].type:
+                        if arg_map[arg].type == 'var':
+                            error(f"{line_number}: {arg} is not an array, {head}")
+                        else:
+                            error(f"{line_number}: {arg} is not a variable, {head}")
+    
+   
+    def check_val_syntax(self,line_num,val,declarations,is_proc = False,arguments = None):
+       # val moze byc tez liczba ale w analizie to mnei nie obchodzi
+        if val[0] == 'iden':
+            iden = val[1]
+            self.check_iden_syntax(line_num,iden,declarations,is_proc,arguments)
+
+
+    def check_iden_syntax(self,line_num,iden,declarations,is_proc = False,arguments = None):
+        # SPRAWDZENEI CZY ZMIENNA JEST ZADEKLAROWANA
+        if iden[1] not in declarations.keys():
+            if is_proc and (iden[1] not in arguments.keys()):
+                error(f"{line_num}: {iden[1]} not declared") 
+            if not is_proc:
+                error(f"{line_num}: {iden[1]} not declared")
+         
+        # SPRAWDZAM CZY JEST VAR jezeli chce dostac Variable
+        if iden[0] == 'var':
+            if (iden[1] in declarations.keys()) and declarations[iden[1]].type != 'var':
+                error(f"{line_num}: {iden[1]} is array")
+
+            if is_proc and (iden[1] in arguments.keys()) and arguments[iden[1]].type != 'var':
+                 error(f"{line_num}: {iden[1]} is array")
+
+            if iden[1] in declarations.keys():
+                if not declarations[iden[1]].is_Assigned:
+                    error(f"{line_num}: {iden[1]} is not assigned")
+         
+         
+        #SPRAWDZAM CO jezeli jest ARRAYEM 
+        if iden[0] == 'arr' or iden[0] == 'arr2':
+            # SPRAWDZENIE CZY JEST ARR
+            if  (iden[1] in declarations.keys()) and declarations[iden[1]].type != 'arr':
+                error(f"{line_num}: {iden[1]} is not an array")
+
+            if is_proc and (iden[1] in arguments.keys()) and arguments[iden[1]].type != 'arr':
+                error(f"{line_num}: {iden[1]} is not an array")
+
+
+            # SPRAWDZENIE CZY jak mamy: A[i], to i jest zadeklarowane  oho sprawdzam czy jest liczba to spoko
+            # jezeli jest arr2 to znaczy ze jest liczba     
+            if (iden[2] not in declarations.keys()) and iden[0] != 'arr2':
+                if is_proc and (iden[2] not in arguments.keys()):
+                    error(f"{line_num}: {iden[1]} not declared")
+                   
+                if not is_proc:
+                    error(f"{line_num}: {iden[1]} not declared")
+                          
+            # SPRAWDZANEI CZY JAK MAMY: A[i] to i jest zainicjowane
+            if (iden[2] in declarations.keys()) and not declarations[iden[2]].is_Assigned:
+                error(f"{line_num}: {iden[2]} is not assigned")
+                
+
+    def assign_mem_to_vars(self):
+        
+        for var_name in self.main_declarations.keys():
+            # zapisuje w pamieci 
+            # oraz zwiekszam k
+            var = self.main_declarations[var_name]
+            var.set_mem(self.k)
+            self.k = self.k + var.size
+            
+       
+        for proc_name in self.proc_declarations.keys():
+            for var_name in self.proc_declarations[proc_name].declarations.keys():
+                # zapisuj w pamieci 
+                # oraz zwiekszam k
+                var = self.proc_declarations[proc_name].declarations[var_name]
+                var.set_mem(self.k)
+                self.k = self.k + var.size
+           
+
+    def get_data(self):
+        
+        # USTAWIAM PAMIEC DLA ZMIENYCH W MAIN 
+        self.assign_mem_to_vars()
+
+        a = (self.proc_declarations,self.main_declarations,self.free_registers,self.is_READ_or_WRITE)
+        
+        return a
+                   
+
+    def gen_fun_head(self,head):
+        name = head[0]
+        args = head[1]
+        st = f"{name}(" 
+        for arg in args:
+            if arg[0] == 'var':
+                st += f"{arg[1]},"
+            else:
+                st += f"T {arg[1]},"
+        
+        st = st[:-1] + ")"
+        return st
+
+class CodeGenerator:
+    def __init__(self,data):
+        self.proc_declarations = data[0]
+        self.main_declarations = data[1]
+        self.free_registers = data[2] 
+        self.is_READ_or_WRITE = data[3]
+        self.machine_code = []
+
+    def translate(self,ast):   
+        if not self.is_READ_or_WRITE:
+            return ['HALT']
+        for procedure in ast[0]:
+            proc_name = procedure[0][0]
+            proc = self.proc_declarations[proc_name]
+            for node in procedure:
+                if type(node) is int:
+                    continue # to jest numer linii
+
+                if node[0] == 'commands':
+                    proc.set_commands(node[1])
+
+        self.translate_main(ast[1])
+        self.machine_code.append('HALT')
+        return self.machine_code
+
+    def translate_main(self,main):
+        for node in main:
+            if node[0] == 'commands':
+                for command in node[1]:
+                    self.translate_command(command,'main')
+
+    def translate_command(self,com,scope):
+        if com[0] == 'ASSIGN':
+            self.translate_assign(com,scope)
+        if com[0] == 'IF':
+            k = self.translate_if(com,scope)
+            self.add_jump_to_if(com[1][0],k,len(self.machine_code))
+        if com[0] == 'IFELSE':
+            self.translate_ifelse(com,scope)
+        if com[0] == 'WHILE':
+            self.translate_while(com,scope)
+        if com[0] == 'REPEAT':
+            self.translate_repeat(com,scope)
+        if com[0] == 'READ':
+            self.translate_read(com,scope)
+        if com[0] == 'WRITE':
+            self.translate_write(com,scope)
+        if com[0] == 'proc_call':
+            self.translate_proc_call(com,scope)
+
+    def translate_proc_call(self,com,scope):
+        proc_name = com[1]
+        proc = self.proc_declarations[proc_name]
+        args = []
+        for var_name in com[2]:
+            var = self.find_var_by_name(scope,var_name)
+            args.append(var)
+        proc.set_arguments(args)
+        self.machine_code.append("RST c # poczatek wywolania")
+        for command in proc.commands:
+            self.translate_command(command,proc_name)
+        self.machine_code.append("RST c # koniec")
+
+    def translate_assign(self,com,scope):
+        iden = com[1]
+        exp = com[2]
+
+        if exp[0] == 'val':
+            val = exp[1]
+            if val[0] == 'number':
+                self.machine_code += load_num(val[1],'a') #wynik
+            if val[0] == 'iden': 
+                self.load_from_iden(scope,val[1],'a')
+            self.save_to_iden(scope,iden,'a')
+
+        if exp[0] == 'ADD':
+            val1 = exp[1]
+            val2 = exp[2]
+            self.load_from_val(scope,val1,'b') # potrzebny wolny rejestr 
+            self.load_from_val(scope,val2,'h')
+            self.machine_code.append("GET b")
+            self.machine_code += gen_expression('+')
+            self.save_to_iden(scope,iden,'a')
+        
+        if exp[0] == 'SUB':
+            val1 = exp[1]
+            val2 = exp[2]
+            self.load_from_val(scope,val1,'b')
+            self.load_from_val(scope,val2,'h')
+            self.machine_code.append("GET b")
+            self.machine_code += gen_expression('-')
+            self.save_to_iden(scope,iden,'a')
+        
+        if exp[0] == 'MUL':
+            val1 = exp[1]
+            val2 = exp[2]
+            #UWAGA NA KOLEJNOSC
+            if val2[0] == 'number' and val2[1] == 2:
+                self.load_from_val(scope,val1,'a')
+                self.machine_code.append("SHL a")
+                self.save_to_iden(scope,iden,'a')
+            else:
+                self.load_from_val(scope,val1,'b')  
+                self.load_from_val(scope,val2,'h') 
+                self.machine_code.append("GET b")   
+                self.machine_code += gen_expression('*',len(self.machine_code))
+                self.save_to_iden(scope,iden,'a')    
+
+        if exp[0] == 'DIV':
+            val1 = exp[1]
+            val2 = exp[2]
+            if val2[0] == 'number' and val2[1] == 2:
+                self.load_from_val(scope,val1,'a')
+                self.machine_code.append("SHR a")
+                self.save_to_iden(scope,iden,'a')
+            else:
+                self.load_from_val(scope,val1,'b')
+                self.load_from_val(scope,val2,'h')
+                self.machine_code.append("GET b")
+                self.machine_code += gen_expression('/',len(self.machine_code))
+                self.save_to_iden(scope,iden,'a')
+
+        if exp[0] == 'MOD':
+            val1 = exp[1]
+            val2 = exp[2]
+            self.load_from_val(scope,val1,'b')
+            self.load_from_val(scope,val2,'h')
+            self.machine_code.append("GET b")
+            self.machine_code += gen_expression('%',len(self.machine_code))
+            self.save_to_iden(scope,iden,'a')
+
+    def translate_write(self,com,scope):
+        val = com[1]
+        self.load_from_val(scope,val,'a')
+        self.machine_code.append("WRITE")
+
+    def translate_read(self,com,scope):
+        iden = com[1]
+        self.machine_code.append("READ")
+        self.save_to_iden(scope,iden,'a')
+
+    def translate_ifelse(self,com,scope):
+        self.machine_code.append("RST c #pocztek ifelse")
+        k = self.translate_if(com,scope) # k to miejsce w kodzie gdzie bedzie JUMP IFA
+        l = len(self.machine_code)
+        self.machine_code.append(" ") # miejsce na JUMP do konca IFELSE
+        elsecommands = com[3][1]
+        for command in elsecommands:
+            self.translate_command(command,scope)
+        m = len(self.machine_code)
+        self.add_jump_to_if(com[1][0],k,l+1)
+        self.machine_code[l] = f"JUMP {m}"
+        self.machine_code.append("RST c #koniec ifelse")
+        
+    def translate_if(self,com,scope):
+        cond = com[1]
+        commands = com[2][1]
+        op = cond[0]
+        val1 = cond[1]
+        val2 = cond[2]
+        self.translate_cond(op,val1,val2,scope)        
+        k  = len(self.machine_code)
+        self.machine_code.append(" ") # miejsce na JUMP
+        
+        for command in commands:
+            self.translate_command(command,scope)    
+        return k
+
+    def add_jump_to_if(self,op,k,l):
+        if op == 'LE':
+            self.machine_code[k] = f"JPOS {l}"
+        if op == 'GE':
+            self.machine_code[k] = f"JPOS {l}"
+        if op == 'LT':
+            self.machine_code[k] = f"JZERO {l}" 
+        if op == 'GT':
+            self.machine_code[k] = f"JZERO {l}" 
+        if op == 'EQ':
+            self.machine_code[k] = f"JPOS  {l}" 
+        if op == 'NEQ':
+            self.machine_code[k] = f"JZERO {l}" 
+
+    def translate_repeat(self,com,scope):
+        #repeat = komendy + if{jump}
+        commands = com[2][1]
+        cond = com[1]
+        op = cond[0]
+        k = len(self.machine_code)
+        for command in commands:
+            self.translate_command(command,scope)
+        val1 = cond[1]
+        val2 = cond[2]
+        self.translate_cond(self.neg_op(op),val1,val2,scope)
+        l = len(self.machine_code) # miejsce na JUMP
+        self.machine_code.append(" ") 
+        self.machine_code.append(f"JUMP {k}") 
+
+        self.add_jump_to_if(self.neg_op(op),l,len(self.machine_code))    
+
+    def neg_op(self,op):
+        if op == 'LE':
+            return 'GE'
+        if op == 'GE':
+            return 'LE'
+        if op == 'LT':
+            return 'GT'
+        if op == 'GT':
+            return 'LT'
+        if op == 'EQ':
+            return 'NEQ'
+        if op == 'NEQ':
+            return 'EQ'
+
+    def translate_while(self,com,scope):
+        #while = if + komendy + jump
+        self.machine_code.append("RST c #poczotek while")
+        commands = com[2][1]
+        cond = com[1]
+        op = cond[0]
+        val1 = cond[1]
+        val2 = cond[2]
+        k = len(self.machine_code)
+        self.translate_cond(op,val1,val2,scope)
+        l = len(self.machine_code)
+        self.machine_code.append(" ") 
+        for command in commands:
+            self.translate_command(command,scope)
+        self.machine_code.append(f"JUMP {k}") 
+        self.add_jump_to_if(op,l,len(self.machine_code))
+        self.machine_code.append("RST c #koniec while")
+        
+    def translate_cond(self,op,val1,val2,scope):
+        if op == 'LE':
+            self.load_from_val(scope,val1,'b')  
+            self.load_from_val(scope,val2,'h') 
+            self.machine_code.append("GET b")   
+            self.machine_code.append("SUB h")
+        if op == 'GE':
+            self.translate_cond('LE',val2,val1,scope)
+
+        if op == 'GT':
+            self.load_from_val(scope,val1,'b')  
+            self.load_from_val(scope,val2,'h') 
+            self.machine_code.append("GET b")   
+            self.machine_code.append("SUB h")
+        if op == 'LT':
+            self.translate_cond('GT',val2,val1,scope)
+
+        if op in  {'EQ','NEQ'}:
+            # (a-h) + (h-a)
+            self.load_from_val(scope,val1,'b')  
+            self.load_from_val(scope,val2,'h') 
+            self.machine_code.append("GET b")   
+            self.machine_code.append("PUT g")
+            #a - h
+            self.machine_code.append("SUB h")
+            self.machine_code.append("PUT f")
+            #h - a
+            self.machine_code.append("GET h")
+            self.machine_code.append("SUB g")
+            # (a-h) + (h-a)
+            self.machine_code.append("ADD f")   
+
+
+    # zapisuje wartosc z rejestru do identyfikatora
+    def save_to_iden(self,scope,iden,reg):
+        if iden[0] == 'var':
+            var = self.find_var_by_name(scope,iden[1])
+            self.machine_code += save_to_mem(reg,var,0)
+        
+        elif iden[0] == 'arr' or iden[0] == 'arr2':
+            var_name = iden[1]
+            var = self.find_var_by_name(scope,var_name)
+
+            if iden[0] == 'arr':
+                var2_name = iden[2]
+                var2 = self.find_var_by_name(scope,var2_name)
+                self.machine_code += save_arr(reg,var,var2)    
+                
+            if iden[0] == 'arr2':
+                num = iden[2]
+                self.machine_code += save_to_mem(reg,var,num)
+        
+
+    def load_from_val(self,scope,val,reg):
+        if val[0] == 'number':
+            self.machine_code += load_num(val[1],reg)
+        if val[0] == 'iden':
+            iden = val[1]
+            self.load_from_iden(scope,iden,reg)
+        return
+
+    # wczytuje wartosc z identyfikatora do rejestru
+    def load_from_iden(self,scope,iden,reg):
+        if iden[0] == 'var':
+            var = self.find_var_by_name(scope,iden[1])
+            self.machine_code += load_var(var,reg)
+        
+        elif iden[0] == 'arr' or iden[0] == 'arr2':
+            var_name = iden[1]
+            var = self.find_var_by_name(scope,var_name)
+
+            if iden[0] == 'arr':
+                var2_name = iden[2]
+                var2 = self.find_var_by_name(scope,var2_name)
+                self.machine_code += load_arr(var,var2,reg)    
+                
+            if iden[0] == 'arr2':
+                num = iden[2]
+                self.machine_code += load_from_mem(var,num,reg)
+
+
+    def find_var_by_name(self,scope,var_name):
+        var = None
+        if scope == 'main':
+            var = self.main_declarations[var_name]
+        else:
+            if var_name in self.proc_declarations[scope].declarations:
+                var = self.proc_declarations[scope].declarations[var_name]
+            else:
+                var = self.proc_declarations[scope].arg_map[var_name].var
+
+        return var
+
+def main():
+    if len(sys.argv) != 3:
+        print('Usage: python main.py <input_file_path> <output_file_path>')
+        sys.exit(1)
+
+    input_file_path = sys.argv[1]
+
+    with open(input_file_path, 'r') as file:
+        input_text = file.read()
+
+    lexer = Lexer()
+    parser = Parser()
+
+    tokens = lexer.tokenize(input_text)
+    ast = parser.parse(tokens)
+
+    analizer = Analyzer(ast)
+    code_generator = CodeGenerator(analizer.get_data())
+    code_mr = code_generator.translate(ast)
+    
+    output_file_path = sys.argv[2]
+    with open(output_file_path, 'w') as file:
+        for line in code_mr:
+            file.write(line + '\n')
+    
+
+if __name__ == "__main__":
+    main()
+
+
+
+    ------------------
+utils
+import sys
+
+def error(error_message):
+    print("ERROR",error_message)
+    sys.exit(1)
+
+#Wykorystuje jeden rejestr
+def load_num(num,reg):
+    codeBlock = []
+    codeBlock.append(f"RST {reg}")
+    bin_r = bin(num)[2:]
+    for i,a in enumerate(bin_r):
+        if i != 0:
+            codeBlock.append(f"SHL {reg}")
+        if a == '1':
+            codeBlock.append(f"INC {reg}")
+    return codeBlock
+
+
+# funkcja przenosci var do rejestru, wykorzystuje rejestr [a] + reg
+def load_var(var,reg):
+    codeBlock = []
+    if var.is_in_register:
+        if reg == var.register:
+            return codeBlock
+        else:
+            codeBlock.append(f"GET {var.reg}")
+            if reg != 'a':
+                codeBlock.append(f"PUT {reg}")
+    else:
+        codeBlock += load_from_mem(var,0,reg)
+        
+    return codeBlock
+
+
+# funkcja zapisuje do pamieci z rejestru, wykorzystuje [a,h] + reg 
+def save_to_mem(reg,var,of): 
+    codeBlock = []
+    if reg != 'a':
+        codeBlock.append(f"PUT {reg}")
+    codeBlock += load_num(var.mem + of,'h')
+    codeBlock.append("STORE h")
+    return codeBlock
+
+
+#funkcja wczytuje z pamieci do rejestru, wykorzystuje rejestr [a] + reg
+def load_from_mem(var,of,reg):
+    codeBlock = []
+    codeBlock += load_num(var.mem + of,reg)
+    codeBlock.append(f"LOAD {reg}")
+    if reg != 'a':
+        codeBlock.append(f"PUT {reg}")
+    return codeBlock
+
+
+#funkcja wczytuje wartosc z arraya do rejestru, wczytuje A[i] do jakiegos rejestru jak i jest varem, wykorzystuje rejestry [a,h] + reg
+def load_arr(var1,var2,reg):
+    codeBLock = []
+    codeBLock += load_var(var2,'h') # uzywa rejestru a i h
+    
+    #to jest array wirec on musi byc w pamieci
+    codeBLock += load_num(var1.mem,'a') # ten tak wlasciwie tylko rejestu a
+    
+    codeBLock.append("ADD h")
+    codeBLock.append("LOAD a")
+    if reg != 'a':
+        codeBLock.append(f"PUT {reg}")
+    return codeBLock
+
+
+#funkcja wczytuje wartosc z rejestru do arraya VAR1[VAR2]
+def save_arr(reg,var1,var2): #uzywa azz 3 rejestrow
+    codeBlock = []
+    if reg != 'a' and reg != 'g':
+        codeBlock.append(f"GET {reg}")
+    if reg != 'g':
+        codeBlock.append("PUT g") # musze wiedziec jaka wartosc mialem zapisac    
+
+    codeBlock += load_var(var2,'h') # uzywa rejestru a i h, ale mozez uzyc samego a
+    codeBlock += load_num(var1.mem,'a') # ten tak wlasciwie tylko rejestr a wiec nie psuje h 
+    codeBlock.append("ADD h")
+    # w tym momencie w rejestrze a mam wartosc mem + var2 czyli moj indeks
+    codeBlock.append("PUT h")
+    codeBlock.append("GET g")
+    codeBlock.append("STORE h")
+    return codeBlock
+
+
+def gen_expression(op, k = 0):
+    # zalozenie początkowe dodaje rejestry: a i h 
+    codeBlock = []
+    if op == '+':
+        codeBlock.append("ADD h")
+    elif op == '-':
+        codeBlock.append("SUB h")
+    #swap przed mnozeniem
+
+    elif op == '*':
+        codeBlock += make_mult(k)
+    elif op == '/':
+        codeBlock += make_div(k)
+    elif op == '%': 
+        codeBlock += make_mod(k)
+
+    return codeBlock
+
+
+"""
+def multiply_log(a, b):
+    result = 0
+
+    while b > 0:
+        if b % 2 == 1:
+            result += a
+        a *= 2
+        b //= 2
+
+    return result
+"""
+def make_mult(k):
+    codeBlock = []   
+    codeBlock.append("PUT g")
+    codeBlock.append("SUB h") 
+    codeBlock.append(f"JPOS {k+6}")
+    codeBlock.append("GET h")     
+    codeBlock.append("PUT f")  
+    codeBlock.append(f"JPOS {k+10}")  
+    codeBlock.append("GET g")  
+    codeBlock.append("PUT f")
+    codeBlock.append("GET h")
+    codeBlock.append("PUT g")
+    codeBlock.append("RST h")  
+    codeBlock.append("GET g")  
+    codeBlock.append(f"JZERO {k+28}")
+    codeBlock.append("SHR a")  
+    codeBlock.append("SHL a")     
+    codeBlock.append("PUT e")  
+    codeBlock.append("SUB g")  
+    codeBlock.append("PUT d")  
+    codeBlock.append("GET g")
+    codeBlock.append("SUB e")   
+    codeBlock.append("ADD d")  
+    codeBlock.append(f"JZERO {k+25}") 
+    codeBlock.append("GET h")
+    codeBlock.append("ADD f")
+    codeBlock.append("PUT h")
+    codeBlock.append("SHL f")
+    codeBlock.append("SHR g")
+    codeBlock.append(f"JUMP {k+11}")
+    codeBlock.append("GET h")
+    return codeBlock
+
+
+"""
+def div_log(a,b):
+    result = 0
+    while a >= b:
+        power = 1
+        div = b
+        while a >= div*2:
+            div *= 2
+            power *= 2
+        a -= div
+        result += power
+    return result
+"""    
+def make_div(k):
+    codeBlock = []
+    codeBlock.append("PUT f")
+    codeBlock.append("GET h")
+    codeBlock.append("PUT g")
+    codeBlock.append("RST h")
+    codeBlock.append("GET g")
+    codeBlock.append("SUB f")
+    codeBlock.append(f"JPOS {k + 25}")
+    codeBlock.append("RST e")
+    codeBlock.append("INC e")
+    codeBlock.append("GET g")
+    codeBlock.append("PUT d")
+    codeBlock.append("GET d")
+    codeBlock.append("SHL a")
+    codeBlock.append("SUB f")
+    codeBlock.append(f"JPOS {k + 18}")
+    codeBlock.append("SHL d")
+    codeBlock.append("SHL e")
+    codeBlock.append(f"JUMP {k + 11}")
+    codeBlock.append("GET f")
+    codeBlock.append("SUB d")
+    codeBlock.append("PUT f")   
+    codeBlock.append("GET h")
+    codeBlock.append("ADD e")
+    codeBlock.append("PUT h")
+    codeBlock.append(f"JUMP {k + 4}")
+    codeBlock.append("GET h")
+    return codeBlock
+
+
+"""
+def mod_log(a, b):
+    while a >= b:
+        power = 1
+        div = b
+        while a >= div * 2:
+            div *= 2
+            power *= 2
+        a -= div
+    return a
+"""
+def make_mod(k):
+    codeBlock = []
+    codeBlock.append("PUT f")
+    codeBlock.append("GET h")
+    codeBlock.append("PUT g")
+    codeBlock.append("GET g")
+    codeBlock.append("SUB f")
+    codeBlock.append(f"JPOS {k + 21}")
+    codeBlock.append("RST e")
+    codeBlock.append("INC e")
+    codeBlock.append("GET g")
+    codeBlock.append("PUT d")
+    codeBlock.append("GET d")
+    codeBlock.append("SHL a")
+    codeBlock.append("SUB f")
+    codeBlock.append(f"JPOS {k + 17}")
+    codeBlock.append("SHL d")
+    codeBlock.append("SHL e")
+    codeBlock.append(f"JUMP {k + 10}")
+    codeBlock.append("GET f")
+    codeBlock.append("SUB d")
+    codeBlock.append("PUT f")   
+    codeBlock.append(f"JUMP {k + 3}")
+    codeBlock.append("GET f")
+    return codeBlock
